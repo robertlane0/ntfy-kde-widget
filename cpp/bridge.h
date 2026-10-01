@@ -9,7 +9,6 @@
 #include <QObject>
 #include <QString>
 
-class QJsonObject;
 class QQmlEngine;
 class QJSEngine;
 
@@ -42,8 +41,6 @@ Q_SIGNALS:
 
 private:
     explicit Bridge(QObject *parent = nullptr);
-
-    void notify(const QJsonObject &payload);
 
     class Private;
     Private *const d;

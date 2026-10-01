@@ -27,31 +27,30 @@ pub struct Engine {
     running: AtomicBool,
 }
 
+static ENGINE: OnceLock<Arc<Engine>> = OnceLock::new();
+
+pub fn engine() -> Arc<Engine> {
+    ENGINE
+        .get_or_init(|| {
+            Arc::new(Engine {
+                subs: Mutex::new(Vec::new()),
+                cursors: Mutex::new(Vec::new()),
+                sinks: Mutex::new(Vec::new()),
+                runtime: Mutex::new(None),
+                shutdown: Mutex::new(None),
+                tx: Mutex::new(None),
+                running: AtomicBool::new(false),
+            })
+        })
+        .clone()
+}
+
 impl Engine {
     /// The engine is kept alive by a `OnceLock`; clone that Arc for thread work.
     fn shared(&self) -> Arc<Engine> {
         ENGINE.get().expect("engine is initialised").clone()
     }
-}
 
-static ENGINE: OnceLock<Arc<Engine>> = OnceLock::new();
-
-pub fn engine() -> Arc<Engine> {
-    ENGINE.get_or_init(|| {
-        Arc::new(Engine {
-            subs: Mutex::new(Vec::new()),
-            cursors: Mutex::new(Vec::new()),
-            sinks: Mutex::new(Vec::new()),
-            runtime: Mutex::new(None),
-            shutdown: Mutex::new(None),
-            tx: Mutex::new(None),
-            running: AtomicBool::new(false),
-        })
-    })
-    .clone()
-}
-
-impl Engine {
     pub fn add_sink(&self, sink: Box<dyn Fn(UiEvent) + Send + Sync>) -> usize {
         let mut sinks = self.sinks.lock().unwrap();
         sinks.push(sink);

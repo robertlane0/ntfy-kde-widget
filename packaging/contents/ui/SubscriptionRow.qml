@@ -53,6 +53,12 @@ Item {
 
     HoverHandler { id: hover }
 
+    // Clicking anywhere on the row clears its unread count.
+    TapHandler {
+        enabled: root.unread > 0
+        onTapped: Bridge.markRead(root.subscription.id)
+    }
+
     RowLayout {
         id: row
 
