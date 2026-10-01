@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 
 use crate::json::{self, Json};
 use crate::model::{LinkState, Notification};
@@ -20,8 +20,17 @@ pub struct Spec {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    Link { id: String, state: LinkState, detail: String },
-    Message { id: String, cursor: String, notification: Notification, time: i64 },
+    Link {
+        id: String,
+        state: LinkState,
+        detail: String,
+    },
+    Message {
+        id: String,
+        cursor: String,
+        notification: Notification,
+        time: i64,
+    },
 }
 
 /// Why a stream attempt ended.
@@ -34,11 +43,19 @@ struct Failure {
 
 impl Failure {
     fn retry(state: LinkState, detail: impl Into<String>) -> Self {
-        Failure { state, detail: detail.into(), fatal: false }
+        Failure {
+            state,
+            detail: detail.into(),
+            fatal: false,
+        }
     }
 
     fn fatal(state: LinkState, detail: impl Into<String>) -> Self {
-        Failure { state, detail: detail.into(), fatal: true }
+        Failure {
+            state,
+            detail: detail.into(),
+            fatal: true,
+        }
     }
 }
 
@@ -115,7 +132,11 @@ pub async fn run(
                 }
             }
             Err(failure) => {
-                let cap = if failure.fatal { FATAL_RETRY } else { MAX_RETRY };
+                let cap = if failure.fatal {
+                    FATAL_RETRY
+                } else {
+                    MAX_RETRY
+                };
                 report(&tx, &spec, &shutdown, failure);
                 if sleep_with_shutdown(&mut backoff, cap, &mut shutdown).await {
                     return;
@@ -173,20 +194,23 @@ async fn connect(
             .get(reqwest::header::RETRY_AFTER)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<u64>().ok());
-        let state = if status.as_u16() == 404 {
-            LinkState::Failed
-        } else if status.as_u16() == 401 || status.as_u16() == 403 {
-            LinkState::Failed
-        } else if status.as_u16() >= 500 {
+        let code = status.as_u16();
+        // Anything the server can plausibly answer differently later is worth
+        // retrying; the rest would fail the same way every time.
+        let state = if (500..600).contains(&code) {
             LinkState::Retrying
         } else {
             LinkState::Failed
         };
-        let mut detail = format!("HTTP {}", status.as_u16());
+        let mut detail = format!("HTTP {code}");
         if let Some(secs) = retry_after {
             detail = format!("{detail} · retry in {secs}s");
         }
-        return Err(Failure { state, detail, fatal: state == LinkState::Failed });
+        return Err(Failure {
+            state,
+            detail,
+            fatal: state == LinkState::Failed,
+        });
     }
 
     let _ = tx.send(Event::Link {
@@ -274,7 +298,11 @@ impl Frame {
         if self.data.trim().is_empty() {
             return None;
         }
-        Some(SseEvent { event: self.event, id: self.id, data: self.data })
+        Some(SseEvent {
+            event: self.event,
+            id: self.id,
+            data: self.data,
+        })
     }
 }
 
@@ -308,41 +336,47 @@ fn dispatch(
         *cursor = Some(message_id.clone());
     }
 
-    match kind.as_str() {
-        "message" => {
-            let tags = value
-                .get("tags")
-                .and_then(Json::as_array)
-                .map(|items| {
-                    items.iter().filter_map(Json::as_str).map(str::to_string).collect()
-                })
-                .unwrap_or_default();
-            let notification = Notification {
-                subscription_id: spec.id.clone(),
-                topic: value
-                    .field_str("topic")
-                    .unwrap_or(&spec.topic)
-                    .to_string(),
-                title: value.field_str("title").unwrap_or_default().to_string(),
-                body: value.field_str("message").unwrap_or_default().to_string(),
-                priority: value
-                    .get("priority")
-                    .and_then(Json::as_i64)
-                    .unwrap_or(3)
-                    .clamp(1, 5) as u8,
-                tags,
-                url: String::new(),
-                received_at: value.get("time").and_then(Json::as_i64).unwrap_or_else(crate::util::now_secs),
-            };
-            let _ = tx.send(Event::Message {
-                id: spec.id.clone(),
-                cursor: message_id,
-                notification,
-                time: value.get("time").and_then(Json::as_i64).unwrap_or_else(crate::util::now_secs),
-            });
-        }
-        _ => {}
+    // open, keepalive and poll_request carry no new message to show.
+    if kind != "message" {
+        return;
     }
+
+    let tags = value
+        .get("tags")
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Json::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let received_at = value
+        .get("time")
+        .and_then(Json::as_i64)
+        .unwrap_or_else(crate::util::now_secs);
+
+    let notification = Notification {
+        subscription_id: spec.id.clone(),
+        topic: value.field_str("topic").unwrap_or(&spec.topic).to_string(),
+        title: value.field_str("title").unwrap_or_default().to_string(),
+        body: value.field_str("message").unwrap_or_default().to_string(),
+        priority: value
+            .get("priority")
+            .and_then(Json::as_i64)
+            .unwrap_or(3)
+            .clamp(1, 5) as u8,
+        tags,
+        url: String::new(),
+        received_at,
+    };
+    let _ = tx.send(Event::Message {
+        id: spec.id.clone(),
+        cursor: message_id,
+        notification,
+        time: received_at,
+    });
 }
 
 /// Sleep with exponential backoff. Returns true when shutdown was requested.
@@ -372,7 +406,11 @@ fn short_error(e: &reqwest::Error) -> String {
     }
     let text = e.to_string();
     // reqwest appends the whole source chain; the first clause is the useful part.
-    text.split(':').next().unwrap_or("request failed").trim().to_string()
+    text.split(':')
+        .next()
+        .unwrap_or("request failed")
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -390,7 +428,10 @@ mod tests {
         let ev = f.build().unwrap();
         assert_eq!(ev.event, "message");
         assert_eq!(ev.data, "{\"a\":1,\n\"b\":2}");
-        assert_eq!(json::parse(&ev.data).unwrap().get("b").unwrap().as_i64(), Some(2));
+        assert_eq!(
+            json::parse(&ev.data).unwrap().get("b").unwrap().as_i64(),
+            Some(2)
+        );
     }
 
     #[test]

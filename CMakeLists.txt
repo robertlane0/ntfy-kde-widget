@@ -9,13 +9,10 @@ project(ntfy-kde-widget
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-find_package(Qt6 6.6 REQUIRED COMPONENTS Core Gui Qml Quick DBus)
-find_package(KF6Config REQUIRED)
-find_package(KF6CoreAddons REQUIRED)
-find_package(KF6KirigamiPlatform REQUIRED)
-find_package(Plasma 6.0 REQUIRED)
+find_package(Qt6 6.6 REQUIRED COMPONENTS Core DBus Qml)
+
+include(CTest)
 
 # ---------------------------------------------------------------------------
 # Rust core: a static library linked straight into the QML extension plugin.
@@ -41,30 +38,22 @@ add_custom_command(
 add_custom_target(ntfy_core_build DEPENDS ${NTFY_CORE_LIB})
 
 # ---------------------------------------------------------------------------
-# QML extension plugin. It exports the Bridge singleton, which is the only
-# thing the applet's QML needs from C++. Shipping it as a normal QML module
-# keeps the applet itself a plain QML KPackage, so there is no plugin loading
-# to arrange on Plasma's side.
+# QML extension plugin. It exports the Bridge singleton, the only thing the
+# applet's QML needs from C++. Shipping it as an ordinary QML module keeps the
+# applet itself a plain QML KPackage, so there is no plugin loading to arrange
+# on Plasma's side.
 # ---------------------------------------------------------------------------
 
 add_library(ntfywidget SHARED cpp/bridge.cpp cpp/plugin.cpp)
 add_dependencies(ntfywidget ntfy_core_build)
-
-set(NTFY_MODULE_URI org.ntfy.widget)
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qmldir
-     "module ${NTFY_MODULE_URI}\nplugin ntfywidget\n"
-)
 
 target_include_directories(ntfywidget PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp)
 
 target_link_libraries(ntfywidget
     PRIVATE
         Qt6::Core
-        Qt6::Gui
-        Qt6::Qml
-        Qt6::Quick
         Qt6::DBus
-        KF6::CoreAddons
+        Qt6::Qml
         ${NTFY_CORE_LIB}
 )
 
@@ -73,16 +62,22 @@ set_target_properties(ntfywidget PROPERTIES
     OUTPUT_NAME ntfywidget
 )
 
+set(NTFY_MODULE_URI org.ntfy.widget)
+string(REPLACE "." "/" NTFY_MODULE_PATH ${NTFY_MODULE_URI})
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qmldir
+     "module ${NTFY_MODULE_URI}\nplugin ntfywidget\n"
+)
+
 # ---------------------------------------------------------------------------
-# Assemble the pieces: a QML module and a KPackage applet that imports it.
+# Stage the pieces: a QML module and a KPackage applet that imports it.
 # ---------------------------------------------------------------------------
 
-set(PACKAGE_ID org.ntfy.widget)
+set(PACKAGE_ID ${NTFY_MODULE_URI})
 set(PACKAGE_STAGE ${CMAKE_CURRENT_BINARY_DIR}/${PACKAGE_ID})
-set(MODULE_STAGE ${CMAKE_CURRENT_BINARY_DIR}/module/org/ntfy/widget)
+set(MODULE_STAGE ${CMAKE_CURRENT_BINARY_DIR}/module/${NTFY_MODULE_PATH})
 
-# Qt only looks in its own import directory for QML modules, so this one has to
-# be staged there rather than under the user's data directory.
+# Qt resolves QML modules by URI inside its own import directory, so this one
+# goes there rather than under the user's data directory.
 find_program(QMAKE6_EXECUTABLE qmake6)
 if(QMAKE6_EXECUTABLE)
     execute_process(COMMAND ${QMAKE6_EXECUTABLE} -query QT_INSTALL_QML
@@ -91,7 +86,7 @@ endif()
 if(NOT QT_INSTALL_QML)
     set(QT_INSTALL_QML ${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PREFIX}/qml)
 endif()
-set(NTFY_MODULE_INSTALL_DIR ${QT_INSTALL_QML}/org/ntfy/widget)
+set(MODULE_INSTALL_DIR ${QT_INSTALL_QML}/${NTFY_MODULE_PATH})
 
 file(GLOB_RECURSE PACKAGING_FILES CONFIGURE_DEPENDS
      ${CMAKE_CURRENT_SOURCE_DIR}/packaging/*
@@ -111,15 +106,19 @@ add_custom_target(ntfy_package ALL
 )
 
 # ---------------------------------------------------------------------------
-# Install targets
+# Install
 # ---------------------------------------------------------------------------
+
+install(DIRECTORY ${PACKAGE_STAGE} DESTINATION ${KDE_INSTALL_DATADIR}/plasma/plasmoids)
+install(DIRECTORY ${MODULE_STAGE} DESTINATION ${QT_INSTALL_QML}/${NTFY_MODULE_PATH})
 
 find_program(KPACKAGETOOL kpackagetool6)
 if(KPACKAGETOOL)
+    # Installing the QML module system wide needs root; the applet itself is
+    # installed for the current user only.
     add_custom_target(dev-install
         COMMAND ${KPACKAGETOOL} --type Plasma/Applet --upgrade ${PACKAGE_STAGE}
-        COMMAND sudo ${CMAKE_COMMAND} -E copy_directory
-                ${MODULE_STAGE} ${NTFY_MODULE_INSTALL_DIR}
+        COMMAND sudo ${CMAKE_COMMAND} -E copy_directory ${MODULE_STAGE} ${MODULE_INSTALL_DIR}
         DEPENDS ntfy_package
         COMMENT "Installing the applet and its QML module"
         VERBATIM
@@ -132,16 +131,14 @@ if(KPACKAGETOOL)
     )
 endif()
 
-install(DIRECTORY ${PACKAGE_STAGE}
-        DESTINATION ${KDE_INSTALL_DATADIR}/plasma/plasmoids)
-install(DIRECTORY ${MODULE_STAGE}
-        DESTINATION ${QT_INSTALL_QML}/org/ntfy)
+# ---------------------------------------------------------------------------
+# Development helper: report how Plasma resolves the installed package.
+# ---------------------------------------------------------------------------
+
+find_package(KF6Package REQUIRED)
+
+add_executable(ntfyprobe tools/probe.cpp)
+target_link_libraries(ntfyprobe PRIVATE Qt6::Core Qt6::Qml KF6::Package)
 
 message(STATUS "Applet id: ${PACKAGE_ID}")
 message(STATUS "Staged package: ${PACKAGE_STAGE}")
-# ---------------------------------------------------------------------------
-# Development helper: probe how Plasma resolves the installed package.
-# ---------------------------------------------------------------------------
-
-add_executable(ntfyprobe tools/probe.cpp)
-target_link_libraries(ntfyprobe PRIVATE Qt6::Core Qt6::Qml Qt6::Quick KF6::Package)

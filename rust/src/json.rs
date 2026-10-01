@@ -65,7 +65,7 @@ impl Json {
         self.get(key).and_then(Json::as_str)
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn to_text(&self) -> String {
         let mut out = String::new();
         self.write(&mut out);
         out
@@ -126,7 +126,10 @@ fn write_string(s: &str, out: &mut String) {
 
 pub fn parse(input: &str) -> Result<Json, String> {
     let bytes: Vec<char> = input.chars().collect();
-    let mut p = Parser { src: &bytes, pos: 0 };
+    let mut p = Parser {
+        src: &bytes,
+        pos: 0,
+    };
     p.skip_ws();
     let value = p.value()?;
     p.skip_ws();
@@ -338,7 +341,8 @@ mod tests {
 
     #[test]
     fn parses_sse_payload() {
-        let v = parse(r#"{"id":"abc","time":1700,"event":"message","message":"hi\nthere"}"#).unwrap();
+        let v =
+            parse(r#"{"id":"abc","time":1700,"event":"message","message":"hi\nthere"}"#).unwrap();
         assert_eq!(v.field_str("id"), Some("abc"));
         assert_eq!(v.get("time").unwrap().as_i64(), Some(1700));
         assert_eq!(v.field_str("message"), Some("hi\nthere"));
@@ -348,7 +352,7 @@ mod tests {
     fn round_trips_unicode_and_escapes() {
         let v = parse(r#"{"a":"é😀","b":[1,2,{"c":null}]}"#).unwrap();
         assert_eq!(v.field_str("a"), Some("é😀"));
-        let out = v.to_string();
+        let out = v.to_text();
         let again = parse(&out).unwrap();
         assert_eq!(v, again);
     }

@@ -32,7 +32,10 @@ fn from_json(v: &Json) -> Option<Subscription> {
         .filter(|t| !t.is_empty())
         .map(str::to_string);
     Some(Subscription {
-        id: v.field_str("id").map(str::to_string).unwrap_or_else(util::new_id),
+        id: v
+            .field_str("id")
+            .map(str::to_string)
+            .unwrap_or_else(util::new_id),
         server,
         topic,
         token,
@@ -63,10 +66,7 @@ pub fn save(subs: &[Subscription]) -> Result<(), String> {
                     .set("id", Json::str(&s.id))
                     .set("server", Json::str(&s.server))
                     .set("topic", Json::str(&s.topic))
-                    .set(
-                        "token",
-                        s.token.clone().map_or(Json::Null, Json::Str),
-                    )
+                    .set("token", s.token.clone().map_or(Json::Null, Json::Str))
                     .set("enabled", Json::Bool(s.enabled))
                     .set("minPriority", Json::int(s.min_priority as i64))
                     .set("createdAt", Json::int(s.created_at))
@@ -74,12 +74,15 @@ pub fn save(subs: &[Subscription]) -> Result<(), String> {
             })
             .collect(),
     );
-    let doc = Obj::new().set("version", Json::int(1)).set("subscriptions", items).build();
+    let doc = Obj::new()
+        .set("version", Json::int(1))
+        .set("subscriptions", items)
+        .build();
 
     // Write to a sibling temp file and rename so a crash cannot truncate the real one.
     let target = util::config_file();
     let tmp = target.with_extension("json.tmp");
-    fs::write(&tmp, doc.to_string()).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    fs::write(&tmp, doc.to_text()).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
     fs::rename(&tmp, &target).map_err(|e| format!("cannot replace {}: {e}", target.display()))?;
     Ok(())
 }

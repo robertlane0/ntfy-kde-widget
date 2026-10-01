@@ -93,10 +93,7 @@ impl Notification {
             .set("title", Json::str(&self.title))
             .set("body", Json::str(&self.body))
             .set("priority", Json::int(self.priority as i64))
-            .set(
-                "tags",
-                Json::Arr(self.tags.iter().map(Json::str).collect()),
-            )
+            .set("tags", Json::Arr(self.tags.iter().map(Json::str).collect()))
             .set("url", Json::str(&self.url))
             .set("receivedAt", Json::int(self.received_at))
             .build()

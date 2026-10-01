@@ -14,6 +14,7 @@ pub const OP_MARK_ALL_READ: u32 = 5;
 /// Notifications below this priority stay in the unread counter only.
 const DEFAULT_PRIORITY: u8 = 3;
 
+/// Starts the engine and every subscription stream. Returns non-zero on success.
 #[unsafe(no_mangle)]
 pub extern "C" fn ntfy_start() -> i32 {
     let engine = engine::engine();
@@ -32,14 +33,19 @@ pub extern "C" fn ntfy_is_running() -> bool {
     engine::engine().is_running()
 }
 
-/// Run a command. Returns a malloc'd JSON result the caller must free with
-/// `ntfy_string_free`.
+/// Runs a command and returns a JSON result the caller frees with
+/// `ntfy_string_free`. Any string argument may be null, meaning an empty string.
 ///
 /// # Safety
 ///
-/// Every string pointer must be null or a valid NUL-terminated C string.
+/// Every pointer must be null or a valid NUL-terminated C string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ntfy_command(op: u32, a: *const c_char, b: *const c_char, c: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn ntfy_command(
+    op: u32,
+    a: *const c_char,
+    b: *const c_char,
+    c: *const c_char,
+) -> *mut c_char {
     let engine = engine::engine();
     let a = unsafe { opt_str(a) };
     let b = unsafe { opt_str(b) };
@@ -62,9 +68,15 @@ pub unsafe extern "C" fn ntfy_command(op: u32, a: *const c_char, b: *const c_cha
             .set("error", Json::str(e))
             .build(),
     };
-    into_c(json.to_string())
+    into_c(json.to_text())
 }
 
+/// Frees a string returned by `ntfy_command`.
+///
+/// # Safety
+///
+/// The pointer must be null or have come from `ntfy_command`, and must not be used
+/// again afterwards.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ntfy_string_free(s: *mut c_char) {
     if !s.is_null() {
@@ -72,12 +84,14 @@ pub unsafe extern "C" fn ntfy_string_free(s: *mut c_char) {
     }
 }
 
-/// Register a listener. The callback receives `(kind, json)` and must not block.
+/// Registers a listener. The callback receives `(kind, json)` and must not block.
 /// Returns an opaque handle for `ntfy_remove_sink`.
+///
+/// # Safety
+///
+/// `sink` must stay valid for as long as the handle is registered.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ntfy_add_sink(
-    sink: extern "C" fn(u32, *const c_char, usize),
-) -> usize {
+pub unsafe extern "C" fn ntfy_add_sink(sink: extern "C" fn(u32, *const c_char, usize)) -> usize {
     engine::engine().add_sink(Box::new(move |event: UiEvent| {
         if let Ok(c) = CString::new(event.json) {
             sink(event.kind, c.as_ptr(), c.as_bytes().len());
@@ -85,6 +99,9 @@ pub unsafe extern "C" fn ntfy_add_sink(
     }))
 }
 
+/// # Safety
+///
+/// The handle must come from `ntfy_add_sink` and must not be used twice.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ntfy_remove_sink(handle: usize) {
     engine::engine().remove_sink(handle);
