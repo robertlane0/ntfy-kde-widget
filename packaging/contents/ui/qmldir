@@ -1,0 +1,9 @@
+singleton Theme 1.0 Theme.qml
+
+ActionButton 1.0 ActionButton.qml
+AddSubscriptionSheet 1.0 AddSubscriptionSheet.qml
+Field 1.0 Field.qml
+Icon 1.0 Icon.qml
+PanelIcon 1.0 PanelIcon.qml
+SubscriptionManager 1.0 SubscriptionManager.qml
+SubscriptionRow 1.0 SubscriptionRow.qml

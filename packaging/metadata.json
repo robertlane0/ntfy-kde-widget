@@ -1,0 +1,21 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "ntfy KDE Widget contributors"
+            }
+        ],
+        "Category": "Utilities",
+        "Description": "Subscribes to ntfy topics and raises a desktop notification for every message",
+        "Icon": "mail-message-new",
+        "Id": "org.ntfy.widget",
+        "License": "MIT",
+        "Name": "ntfy Notifications",
+        "Version": "1.0",
+        "Website": "https://ntfy.sh"
+    },
+    "X-Plasma-API": "declarativeappletscript",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml"
+}

@@ -1,1 +1,4 @@
 AGENTS.md
+/build
+/rust/target
+*.qmlls.ini
