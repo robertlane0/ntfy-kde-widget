@@ -14,6 +14,7 @@ Button {
 
     property string name: "trash"
     property color iconColor: Theme.textTertiary
+    property var slashLayers: [Theme.surface]
     property string tooltip: ""
 
     implicitWidth: 24
@@ -35,6 +36,7 @@ Button {
         height: 14
         name: root.name
         color: root.iconColor
+        slashLayers: root.slashLayers
         opacity: root.hovered || root.down || root.name.endsWith("fill") ? 1 : 0.62
 
         Behavior on opacity {

@@ -5,5 +5,6 @@ AddSubscriptionSheet 1.0 AddSubscriptionSheet.qml
 Field 1.0 Field.qml
 Icon 1.0 Icon.qml
 PanelIcon 1.0 PanelIcon.qml
+PillButton 1.0 PillButton.qml
 SubscriptionManager 1.0 SubscriptionManager.qml
 SubscriptionRow 1.0 SubscriptionRow.qml

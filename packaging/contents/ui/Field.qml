@@ -4,7 +4,6 @@
     Labelled text input with a macOS style inset field.
 */
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import org.ntfy.widget

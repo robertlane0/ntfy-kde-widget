@@ -117,9 +117,27 @@ normalisation and id generation. The Qt side has no automated tests; the
 ## Notes and limits
 
 - Plasma 6.11 moved `PathSvg` into `QtQuick` and `ShapePath` has no `visible`
-  property, so `Icon.qml` uses one `Shape` per glyph.
+  property, so `Icon.qml` draws one `Shape` per glyph with `PathSvg` sub-paths.
+- A `Shape` with `layer.enabled` is composited *after* its plain siblings, so
+  anything meant to draw over an icon has to live inside the `Shape`. That is why
+  the mute icon's strikethrough is a `ShapePath` rather than a rotated rectangle.
+- The mute icon is a bell outline with the slash knocked out, and the knockout is
+  stroked in the row's own colours (`Icon.slashLayers`) so it blends with the row
+  whether it is idle, hovered, or showing the delete confirmation.
 - Notifications are posted over `org.freedesktop.Notifications` directly. Actions are
   label/key pairs; both entries share a label so the server renders a single button.
 - Backdrop blur is not available to Qt Quick windows on Wayland, so the popover uses
   Plasma's own background and gets its macOS feel from the content: rounded cards,
   hairline separators, restrained type and an accent used sparingly.
+- Every labelled action is a `PillButton`. A `Button` stretches its `contentItem`
+  across the whole content area, so the icon and label live in a `Row` centred
+  inside an `Item`; otherwise the label drifts into a corner.
+
+## Development helpers
+
+Both are behind `-DNTFY_BUILD_TOOLS=ON`.
+
+- `ntfyprobe` reports how Plasma resolves the installed package.
+- `ntfypreview <file.qml>` opens a QML file in a window, which is how the icons
+  and buttons in `contents/ui` were checked without restarting the shell.
+  `docs/preview.qml` renders every icon and button at once.

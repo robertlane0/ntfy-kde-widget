@@ -132,13 +132,25 @@ if(KPACKAGETOOL)
 endif()
 
 # ---------------------------------------------------------------------------
-# Development helper: report how Plasma resolves the installed package.
+# Development helpers. Off by default so the widget itself keeps a small
+# dependency list.
 # ---------------------------------------------------------------------------
 
-find_package(KF6Package REQUIRED)
+option(NTFY_BUILD_TOOLS "Build the development helpers" OFF)
 
-add_executable(ntfyprobe tools/probe.cpp)
-target_link_libraries(ntfyprobe PRIVATE Qt6::Core Qt6::Qml KF6::Package)
+if(NTFY_BUILD_TOOLS)
+    find_package(Qt6 REQUIRED COMPONENTS Gui Quick QuickControls2)
+    find_package(KF6Package REQUIRED)
+
+    # Reports how Plasma resolves the installed package.
+    add_executable(ntfyprobe tools/probe.cpp)
+    target_link_libraries(ntfyprobe PRIVATE Qt6::Core Qt6::Qml Qt6::Quick KF6::Package)
+
+    # Shows any QML file in a window, for checking UI changes.
+    add_executable(ntfypreview tools/preview.cpp)
+    target_link_libraries(ntfypreview PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+endif()
 
 message(STATUS "Applet id: ${PACKAGE_ID}")
 message(STATUS "Staged package: ${PACKAGE_STAGE}")

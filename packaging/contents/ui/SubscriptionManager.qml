@@ -207,78 +207,33 @@ Item {
             color: Theme.separator
         }
 
-        Button {
+        PillButton {
             id: addButton
 
             anchors.left: parent.left
             anchors.leftMargin: Theme.padding
             anchors.verticalCenter: parent.verticalCenter
 
-            implicitHeight: 30
-            implicitWidth: addRow.implicitWidth + 26
-            hoverEnabled: true
-
-            background: Rectangle {
-                radius: Theme.radiusControl
-                color: addButton.down ? Qt.darker(Theme.accent, 1.14)
-                                      : (addButton.hovered ? Qt.lighter(Theme.accent, 1.08) : Theme.accent)
-                Behavior on color { ColorAnimation { duration: Theme.durationFast } }
-            }
-
-            contentItem: RowLayout {
-                id: addRow
-                spacing: 6
-
-                Icon {
-                    Layout.preferredWidth: 12
-                    Layout.preferredHeight: 12
-                    name: "bell.fill"
-                    color: "#ffffff"
-                }
-
-                Text {
-                    text: i18n("Add Subscription")
-                    color: "#ffffff"
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    font.weight: Font.DemiBold
-                }
-            }
+            text: i18n("Add Subscription")
+            iconName: "plus"
+            primary: true
 
             onClicked: root.adding = !root.adding
         }
 
-        Button {
+        PillButton {
             id: markAllButton
 
             anchors.right: parent.right
             anchors.rightMargin: Theme.padding
             anchors.verticalCenter: parent.verticalCenter
             visible: root.subs.length > 0
+
             text: i18n("Mark All Read")
-            hoverEnabled: true
-
-            implicitHeight: 28
-            implicitWidth: markLabel.implicitWidth + 18
-
-            background: Rectangle {
-                radius: Theme.radiusControl
-                color: markAllButton.hovered ? Theme.surfaceHover : "transparent"
-                Behavior on color { ColorAnimation { duration: Theme.durationFast } }
-            }
-
-            contentItem: Text {
-                id: markLabel
-                text: markAllButton.text
-                color: Theme.textSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-            }
 
             onClicked: Bridge.markAllRead()
         }
     }
-
     }
 
     // The add form sits above the footer like a sheet.

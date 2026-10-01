@@ -5,7 +5,6 @@
     and host on the left, unread pill and actions on the right.
 */
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import org.ntfy.widget
@@ -22,20 +21,19 @@ Item {
 
     implicitHeight: row.implicitHeight + 10
 
+    // What is actually painted behind the row, so the mute button's
+    // strikethrough can knock out exactly the same colours.
+    readonly property color rowBackground: confirmRemove ? Theme.error
+                                                          : (hover.hovered ? Theme.surfaceHover : "transparent")
+    readonly property var maskLayers: confirmRemove ? [Theme.surface, Theme.error]
+                                                    : [Theme.surface, Theme.surfaceHover]
+
     // Hover highlight, inset like a macOS sidebar selection.
     Rectangle {
         anchors.fill: parent
         anchors.margins: 1
         radius: Theme.radiusRow
-        color: {
-            if (confirmRemove) {
-                return Theme.error
-            }
-            if (hover.hovered) {
-                return Theme.surfaceHover
-            }
-            return "transparent"
-        }
+        color: root.rowBackground
 
         Behavior on color {
             ColorAnimation { duration: Theme.durationFast }
@@ -177,8 +175,9 @@ Item {
             spacing: 2
 
             ActionButton {
-                name: root.muted ? "bell.slash" : "bell.slash.fill"
-                iconColor: hover.hovered ? Theme.text : Theme.textTertiary
+                name: root.muted ? "bell.slash" : "bell.fill"
+                iconColor: hover.hovered ? Theme.text : (root.muted ? Theme.textSecondary : Theme.textTertiary)
+                slashLayers: root.maskLayers
                 tooltip: root.muted ? i18n("Unmute") : i18n("Mute")
                 onClicked: Bridge.setEnabled(root.subscription.id, root.muted)
             }

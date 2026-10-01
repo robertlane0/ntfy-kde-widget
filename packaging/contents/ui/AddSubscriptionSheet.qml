@@ -5,7 +5,6 @@
     primary action, in the same visual language as the rest of the panel.
 */
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import org.ntfy.widget
@@ -99,27 +98,10 @@ Rectangle {
 
             Item { Layout.fillWidth: true }
 
-            Button {
+            PillButton {
                 id: cancelButton
 
                 text: i18n("Cancel")
-                hoverEnabled: true
-                implicitHeight: 30
-
-                background: Rectangle {
-                    radius: Theme.radiusControl
-                    color: cancelButton.down ? Theme.surfaceActive
-                                             : (cancelButton.hovered ? Theme.surfaceHover : "transparent")
-                    Behavior on color { ColorAnimation { duration: Theme.durationFast } }
-                }
-
-                contentItem: Text {
-                    text: cancelButton.text
-                    color: Theme.textSecondary
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    verticalAlignment: Text.AlignVCenter
-                }
 
                 onClicked: {
                     topicField.text = ""
@@ -129,34 +111,13 @@ Rectangle {
                 }
             }
 
-            Button {
+            PillButton {
                 id: submit
 
                 objectName: "addSubscriptionConfirm"
                 text: i18n("Subscribe")
-                hoverEnabled: true
+                primary: true
                 enabled: topicField.text.trim().length > 0
-                implicitHeight: 30
-                implicitWidth: submitLabel.implicitWidth + 26
-
-                background: Rectangle {
-                    radius: Theme.radiusControl
-                    color: !submit.enabled
-                        ? Qt.rgba(Theme.textTertiary.r, Theme.textTertiary.g, Theme.textTertiary.b, 0.35)
-                        : (submit.down ? Qt.darker(Theme.accent, 1.14)
-                                       : (submit.hovered ? Qt.lighter(Theme.accent, 1.08) : Theme.accent))
-                    Behavior on color { ColorAnimation { duration: Theme.durationFast } }
-                }
-
-                contentItem: Text {
-                    id: submitLabel
-                    text: submit.text
-                    color: "#ffffff"
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    font.weight: Font.DemiBold
-                    verticalAlignment: Text.AlignVCenter
-                }
 
                 onClicked: {
                     const topic = topicField.text.trim()
