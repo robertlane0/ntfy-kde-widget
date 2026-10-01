@@ -12,6 +12,12 @@ Item {
 
     property int unread: 0
 
+    signal activate()
+
+    TapHandler {
+        onTapped: root.activate()
+    }
+
     onUnreadChanged: {
         if (unread > 0 && unread === 1) {
             nudge.restart()

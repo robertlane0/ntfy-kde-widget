@@ -54,13 +54,15 @@ PlasmoidItem {
         }
     }
 
-    Component.onCompleted: {
-        console.warn("NTFY-MAIN-LOADED")
-        root.model = JSON.parse(Bridge.state() || "{}")
-    }
+    Component.onCompleted: root.model = JSON.parse(Bridge.state() || "{}")
 
+    // A bare PlasmoidItem, unlike a CompactApplet, gets no popup toggle from
+    // the shell, so the panel button has to ask for one. The toggle has to
+    // happen on this root: the Plasmoid attached type does not resolve to the
+    // applet from inside a separate component file.
     compactRepresentation: PanelIcon {
         unread: root.totalUnread
+        onActivate: root.expanded = !root.expanded
     }
 
     fullRepresentation: SubscriptionManager {
