@@ -5,64 +5,45 @@ raises desktop notifications when messages arrive.
 
 ## Constraints
 
-- Rust 2024, `#![forbid(unsafe_code)]`
+- Rust 2024, no `unsafe` outside the C ABI shim
 - Only UI / network-stack crates (`reqwest`, `tokio`). Everything else is hand written.
 - macOS-inspired UI.
 
 ## Architecture
 
+See [docs/architecture.md](docs/architecture.md) for the full picture. In short:
+
+- The applet is a plain QML `KPackage`. Plasma never loads a library out of an applet
+  package, so the C++ side ships as a normal QML extension module (`org.ntfy.widget`)
+  installed into Qt's import directory. It exports one `Bridge` singleton.
+- `Bridge` is a thin `QObject` wrapper over a Rust static library linked into the same
+  `.so`. It forwards commands in and hops JSON events from Rust's worker threads onto
+  the GUI thread.
+- The Rust core runs a tokio task per subscription, each holding an SSE request, and
+  keeps per-topic unread counters.
+
+## Layout
+
 ```
-plasmashell
- └── contents/code/libntfyapplet.so      KPluginFactory + QML module "NtfyWidget"
-      ├── NtfyApplet   Plasma::Applet    applet instance
-      ├── Bridge       QObject           Rust event sink, D-Bs notifier, URL opener
-      └── libntfy_core.a                 static Rust core (linked in)
-           └── tokio worker threads → one SSE stream per subscription
+rust/      engine, SSE client, JSON, storage, C ABI
+cpp/       QML extension plugin and the Bridge object
+packaging/ the KPackage: metadata.json and the QML
+tools/     ntfyprobe, a package-resolution helper
+docs/      architecture notes
 ```
-
-The shell (`CompactApplet.qml`) owns the popup window. The applet only supplies
-`compactRepresentation` (panel button) and `fullRepresentation` (popup content),
-and toggles `expanded` to open/close it.
-
-### Rust core (`rust/`)
-
-| file       | role                                                     |
-| ---------- | -------------------------------------------------------- |
-| `json.rs`  | minimal JSON parser + writer (no serde)                   |
-| `model.rs` | `Subscription`, `Message`, `LinkState`                    |
-| `store.rs` | JSON persistence under `$XDG_CONFIG_HOME/ntfy-kde-widget`  |
-| `client.rs`| one resilient SSE subscription loop                       |
-| `engine.rs`| supervisor: tasks, unread counters, event fan-out         |
-| `ffi.rs`   | `extern "C"` surface consumed by the C++ bridge           |
-
-### C ABI
-
-Rust → C++: sinks registered per applet instance,
-`void sink(u32 kind, u64 token, const u8 *json, usize len)` marshalled with a
-queued Qt connection. Kinds: `1` state, `2` notify, `3` log.
-
-C++ → Rust: `char *ntfy_command(u32 op, const char *a, const char *b, const char *c)`
-returns a JSON result string. Ops: add, remove, set-enabled, mark-read,
-mark-all-read, set-min-priority.
-
-## UI (macOS-inspired)
-
-- Panel: bell glyph with a macOS-style accent badge for the unread total.
-- Popup: 380×520 popover.
-  - Header: app title + live connection summary, hairline divider.
-  - Body: sidebar-style rows — status dot, topic, host, unread pill, mute and
-    delete buttons, hover highlight.
-  - Footer: accent pill button "Add Subscription"; the add form floats above it
-    in its own card.
-  - Empty state: centred glyph, headline, subline, call to action.
-- Palette adapts to the Plasma colour scheme and to light/dark.
 
 ## Milestones
 
 1. [x] Environment survey, toolchain check
-2. [ ] Skeleton applet (C++ + QML) loads in the panel
-3. [ ] Rust core: JSON, store, engine, FFI
-4. [ ] SSE client with reconnect
-5. [ ] macOS UI
-6. [ ] End-to-end verification with screenshots
-7. [ ] README / docs
+2. [x] Rust core: JSON, storage, engine, FFI, tests
+3. [x] SSE client with reconnect and cursor resume
+4. [x] Ship the C++ bridge as a QML module so the applet stays pure QML
+5. [x] macOS UI: panel button, popover, rows, add sheet
+6. [x] End-to-end verification with screenshots
+7. [x] README and architecture notes
+
+## Still open
+
+- Per-topic priority editing is stored and honoured but not editable in the UI.
+- No automated tests on the Qt side.
+- Backdrop blur is not available on Wayland; the popover leans on Plasma's background.

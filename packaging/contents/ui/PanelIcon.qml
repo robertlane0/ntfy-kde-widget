@@ -72,8 +72,8 @@ Item {
         anchors.rightMargin: 2
         anchors.topMargin: 2
 
-        width: Math.max(label.implicitWidth + 9, 15)
-        height: 15
+        width: Math.max(label.implicitWidth + 11, 17)
+        height: 17
 
         Rectangle {
             anchors.fill: parent
@@ -90,7 +90,7 @@ Item {
             text: badge.count > 99 ? "99+" : badge.count
             color: "#ffffff"
             font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontBadge
+            font.pixelSize: Theme.fontBadge + 1
             font.weight: Font.DemiBold
         }
 

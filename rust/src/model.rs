@@ -72,7 +72,7 @@ impl Subscription {
     }
 }
 
-/// A message shown to the user, kept briefly for the "recent" list in the popup.
+/// A message that became a desktop notification.
 #[derive(Debug, Clone)]
 pub struct Notification {
     pub subscription_id: String,

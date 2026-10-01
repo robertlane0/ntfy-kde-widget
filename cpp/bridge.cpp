@@ -9,7 +9,6 @@
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusMessage>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaObject>
@@ -157,8 +156,6 @@ class Bridge::Private
 {
 public:
     QString state;
-    QString recent;
-    int unread = 0;
 };
 
 Bridge::Bridge(QObject *parent)
@@ -198,25 +195,12 @@ QString Bridge::state() const
     return d->state;
 }
 
-QString Bridge::recent() const
-{
-    return d->recent;
-}
-
-int Bridge::unread() const
-{
-    return d->unread;
-}
-
 void Bridge::handleEvent(uint32_t kind, const QString &payload)
 {
     const QJsonObject obj = QJsonDocument::fromJson(payload.toUtf8()).object();
     switch (kind) {
     case NtfyEventState:
         d->state = payload;
-        d->recent = QString::fromUtf8(
-            QJsonDocument(obj.value(QStringLiteral("recent")).toArray()).toJson(QJsonDocument::Compact));
-        d->unread = obj.value(QStringLiteral("unread")).toInt();
         Q_EMIT stateChanged();
         break;
     case NtfyEventNotify:
@@ -281,9 +265,5 @@ QString Bridge::markAllRead()
     return run(NtfyCmdMarkAllRead);
 }
 
-QString Bridge::openUrl(const QString &url)
-{
-    return run(NtfyCmdOpen, url);
-}
 
 #include "bridge.moc"

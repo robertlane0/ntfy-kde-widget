@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 use crate::client::{self, Event, Spec};
-use crate::model::{LinkState, Notification, Subscription};
+use crate::model::{LinkState, Subscription};
 use crate::{store, util};
 
 /// Everything the UI needs to render a single event, as JSON text.
@@ -17,13 +17,9 @@ const KIND_STATE: u32 = 1;
 const KIND_NOTIFY: u32 = 2;
 const KIND_LOG: u32 = 3;
 
-/// Keeps the recent messages shown at the bottom of the popup.
-const RECENT_LIMIT: usize = 24;
-
 pub struct Engine {
     subs: Mutex<Vec<Subscription>>,
     cursors: Mutex<Vec<(String, String)>>,
-    recent: Mutex<Vec<Notification>>,
     sinks: Mutex<Vec<Box<dyn Fn(UiEvent) + Send + Sync>>>,
     runtime: Mutex<Option<tokio::runtime::Runtime>>,
     shutdown: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
@@ -45,7 +41,6 @@ pub fn engine() -> Arc<Engine> {
         Arc::new(Engine {
             subs: Mutex::new(Vec::new()),
             cursors: Mutex::new(Vec::new()),
-            recent: Mutex::new(Vec::new()),
             sinks: Mutex::new(Vec::new()),
             runtime: Mutex::new(None),
             shutdown: Mutex::new(None),
@@ -79,16 +74,11 @@ impl Engine {
 
     fn emit_state(&self) {
         let subs = self.snapshot();
-        let recent = self.recent.lock().unwrap();
         let unread: u32 = subs.iter().map(|s| s.unread).sum();
         let doc = crate::json::Obj::new()
             .set(
                 "subscriptions",
                 crate::json::Json::Arr(subs.iter().map(|s| s.to_json()).collect()),
-            )
-            .set(
-                "recent",
-                crate::json::Json::Arr(recent.iter().map(|n| n.to_json()).collect()),
             )
             .set("unread", crate::json::Json::int(unread as i64))
             .build();
@@ -291,18 +281,11 @@ impl Engine {
                 }
                 notification.url = url;
                 if is_new {
-                    self.push_recent(notification.clone());
                     self.emit(KIND_NOTIFY, notification.to_json().to_string());
                 }
                 self.emit_state();
             }
         }
-    }
-
-    fn push_recent(&self, notification: Notification) {
-        let mut recent = self.recent.lock().unwrap();
-        recent.insert(0, notification);
-        recent.truncate(RECENT_LIMIT);
     }
 
     // --- commands --------------------------------------------------------

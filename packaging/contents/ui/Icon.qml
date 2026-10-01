@@ -35,14 +35,16 @@ Item {
 
         Shapes.ShapePath {
             strokeColor: root.color
-            strokeWidth: root.weight * root.s
+            // A filled bell reads as a blob at panel sizes, so the stroke
+            // shrinks to a hairline whenever the body is filled.
+            strokeWidth: (root.filled ? 0.9 : root.weight) * root.s
             fillColor: root.filled ? root.color : "transparent"
             capStyle: Shapes.ShapePath.RoundCap
             joinStyle: Shapes.ShapePath.RoundJoin
 
             // Dome with a flared skirt.
             PathSvg {
-                path: "M 4.4 6.5 A 3.6 3.6 0 0 1 11.6 6.5 V 9.2 L 12.8 11.2 H 3.2 L 4.4 9.2 Z"
+                path: "M 4.4 6.6 A 3.6 3.6 0 0 1 11.6 6.6 V 9.2 L 12.8 11.1 H 3.2 L 4.4 9.2 Z"
             }
         }
 

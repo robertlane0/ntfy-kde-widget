@@ -16,7 +16,6 @@ class QJSEngine;
 class Bridge : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(int unread READ unread NOTIFY stateChanged)
 
 public:
     ~Bridge() override;
@@ -26,8 +25,6 @@ public:
 
     /// Full state snapshot as JSON, delivered on the GUI thread.
     Q_INVOKABLE QString state() const;
-    Q_INVOKABLE QString recent() const;
-    Q_INVOKABLE int unread() const;
 
     /// GUI thread entry point for core events; called by the shared sink.
     void handleEvent(uint32_t kind, const QString &payload);
@@ -39,7 +36,6 @@ public Q_SLOTS:
     QString setEnabled(const QString &id, bool enabled);
     QString markRead(const QString &id);
     QString markAllRead();
-    QString openUrl(const QString &url);
 
 Q_SIGNALS:
     void stateChanged();

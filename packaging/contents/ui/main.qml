@@ -14,7 +14,7 @@ PlasmoidItem {
     id: root
 
     // Snapshot of the whole engine state, refreshed on every core event.
-    property var model: ({ subscriptions: [], recent: [], unread: 0 })
+    property var model: ({ subscriptions: [], unread: 0 })
 
     readonly property int totalUnread: {
         let sum = 0
@@ -24,19 +24,6 @@ PlasmoidItem {
         }
         return sum
     }
-
-    readonly property int liveCount: {
-        let n = 0
-        const subs = model.subscriptions || []
-        for (let i = 0; i < subs.length; ++i) {
-            if (subs[i].state === "live") {
-                ++n
-            }
-        }
-        return n
-    }
-
-    readonly property bool hasAny: (model.subscriptions || []).length > 0
 
     function topicCount() {
         return (model.subscriptions || []).length

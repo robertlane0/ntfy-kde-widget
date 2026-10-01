@@ -13,7 +13,7 @@ import org.ntfy.widget
 Item {
     id: root
 
-    property var model: ({ subscriptions: [], recent: [], unread: 0 })
+    property var model: ({ subscriptions: [], unread: 0 })
     property bool adding: false
 
     readonly property var subs: model.subscriptions || []

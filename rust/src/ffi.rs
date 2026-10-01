@@ -10,7 +10,6 @@ pub const OP_REMOVE: u32 = 2;
 pub const OP_SET_ENABLED: u32 = 3;
 pub const OP_MARK_READ: u32 = 4;
 pub const OP_MARK_ALL_READ: u32 = 5;
-pub const OP_OPEN: u32 = 6;
 
 /// Notifications below this priority stay in the unread counter only.
 const DEFAULT_PRIORITY: u8 = 3;
@@ -53,7 +52,6 @@ pub unsafe extern "C" fn ntfy_command(op: u32, a: *const c_char, b: *const c_cha
         OP_SET_ENABLED => engine.set_enabled(&a, b == "1"),
         OP_MARK_READ => engine.mark_read(&a),
         OP_MARK_ALL_READ => engine.mark_all_read(),
-        OP_OPEN => engine.open(&a),
         _ => Err(format!("unknown command {op}")),
     };
 

@@ -56,7 +56,6 @@ QtObject {
 
     readonly property int unit: 8
     readonly property int padding: 14
-    readonly property int rowHeight: 46
 
     // Type ramp.
     readonly property string fontFamily: Qt.fontFamilies().indexOf("SF Pro Text") >= 0
@@ -83,22 +82,6 @@ QtObject {
             return error
         default:
             return muted
-        }
-    }
-
-    /// Human readable state text for the status line under each topic.
-    function stateLabel(state) {
-        switch (state) {
-        case "live":
-            return "Live"
-        case "connecting":
-            return "Connecting…"
-        case "retrying":
-            return "Reconnecting…"
-        case "failed":
-            return "Not connected"
-        default:
-            return "Muted"
         }
     }
 }

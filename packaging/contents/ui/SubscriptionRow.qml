@@ -172,14 +172,14 @@ Item {
 
             ActionButton {
                 name: root.muted ? "bell.slash" : "bell.slash.fill"
-                iconColor: hover.containsMouse ? Theme.text : Theme.textTertiary
+                iconColor: hover.hovered ? Theme.text : Theme.textTertiary
                 tooltip: root.muted ? i18n("Unmute") : i18n("Mute")
                 onClicked: Bridge.setEnabled(root.subscription.id, root.muted)
             }
 
             ActionButton {
                 name: "trash"
-                iconColor: root.confirmRemove ? Theme.error : (hover.containsMouse ? Theme.error : Theme.textTertiary)
+                iconColor: root.confirmRemove ? Theme.error : (hover.hovered ? Theme.error : Theme.textTertiary)
                 tooltip: root.confirmRemove ? i18n("Click again to delete") : i18n("Remove")
                 onClicked: {
                     if (root.confirmRemove) {

@@ -23,7 +23,6 @@ enum NtfyCommand : uint32_t {
     NtfyCmdSetEnabled = 3,
     NtfyCmdMarkRead = 4,
     NtfyCmdMarkAllRead = 5,
-    NtfyCmdOpen = 6,
 };
 
 /// Starts the engine and every subscription stream. Returns non-zero on success.
