@@ -122,7 +122,7 @@ Rectangle {
                 }
 
                 onClicked: {
-                    topicField.clear()
+                    topicField.text = ""
                     serverField.text = "ntfy.sh"
                     root.error = ""
                     root.accepted()
@@ -168,7 +168,7 @@ Rectangle {
                         root.error = problem
                         return
                     }
-                    topicField.clear()
+                    topicField.text = ""
                     root.error = ""
                     root.accepted()
                 }

@@ -10,7 +10,7 @@ import QtQuick.Layouts
 
 import org.ntfy.widget
 
-ColumnLayout {
+Item {
     id: root
 
     property var model: ({ subscriptions: [], recent: [], unread: 0 })
@@ -18,8 +18,6 @@ ColumnLayout {
 
     readonly property var subs: model.subscriptions || []
     readonly property int totalUnread: model.unread || 0
-
-    spacing: 0
 
     Layout.minimumWidth: 380
     Layout.preferredWidth: 380
@@ -33,6 +31,13 @@ ColumnLayout {
         }
         return sum
     }
+
+    // The sheet floats over the list, so it lives outside the column layout.
+    ColumnLayout {
+        id: column
+
+        anchors.fill: parent
+        spacing: 0
 
     // ---------------------------------------------------------------- header
 
@@ -130,9 +135,12 @@ ColumnLayout {
 
             // Empty state.
             ColumnLayout {
+                visible: root.subs.length === 0
                 Layout.fillWidth: true
-                Layout.topMargin: 24
-                Layout.bottomMargin: 24
+                Layout.fillHeight: true
+                Layout.minimumHeight: 150
+                Layout.topMargin: 20
+                Layout.bottomMargin: 20
                 spacing: Theme.unit
 
                 Icon {
@@ -241,6 +249,8 @@ ColumnLayout {
         }
 
         Button {
+            id: markAllButton
+
             anchors.right: parent.right
             anchors.rightMargin: Theme.padding
             anchors.verticalCenter: parent.verticalCenter
@@ -253,13 +263,13 @@ ColumnLayout {
 
             background: Rectangle {
                 radius: Theme.radiusControl
-                color: parent.hovered ? Theme.surfaceHover : "transparent"
+                color: markAllButton.hovered ? Theme.surfaceHover : "transparent"
                 Behavior on color { ColorAnimation { duration: Theme.durationFast } }
             }
 
             contentItem: Text {
                 id: markLabel
-                text: parent.text
+                text: markAllButton.text
                 color: Theme.textSecondary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
@@ -269,13 +279,16 @@ ColumnLayout {
         }
     }
 
+    }
+
     // The add form sits above the footer like a sheet.
     AddSubscriptionSheet {
         id: sheet
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: footer.top
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: footer.height
         visible: opacity > 0
         opacity: root.adding ? 1 : 0
         enabled: opacity > 0.5

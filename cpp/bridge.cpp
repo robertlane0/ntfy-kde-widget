@@ -109,14 +109,19 @@ void postNotification(const QString &title, const QString &body, const QString &
                                      QDBusConnection::sessionBus());
     iface->setTimeout(2000);
 
-    const QStringList actions =
-        url.isEmpty() ? QStringList() : QStringList{QStringLiteral("Open topic"), QStringLiteral("default")};
+    // Actions are pairs: a label followed by its key. Both entries share the same
+// label so the server renders a single button whichever one it picks.
+const QStringList actions =
+        url.isEmpty() ? QStringList() : QStringList{QStringLiteral("Open topic"), QStringLiteral("Open topic")};
 
     QVariantMap hints;
     hints.insert(QStringLiteral("urgency"), priority >= 5 ? 2 : (priority <= 2 ? 0 : 1));
     if (!title.isEmpty()) {
         hints.insert(QStringLiteral("x-kde-notification-title"), title);
     }
+
+    // Urgent messages stay on screen longer; the rest use the server default.
+    const int timeout = priority >= 5 ? 20000 : -1;
 
     const QDBusMessage reply = iface->call(
         QStringLiteral("Notify"),
@@ -127,7 +132,7 @@ void postNotification(const QString &title, const QString &body, const QString &
         body,
         actions,
         hints,
-        -1);
+        timeout);
 
     if (reply.type() == QDBusMessage::ErrorMessage) {
         // Nothing is listening for desktop notifications; drop it quietly.

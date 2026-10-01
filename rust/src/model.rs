@@ -39,16 +39,13 @@ pub struct Subscription {
 
 impl Subscription {
     /// Stream url with a `since` cursor so reconnects resume instead of replaying.
-    pub fn stream_url(&self, since: Option<&str>) -> String {
-        let base = format!(
-            "{}/{}/sse",
+    pub fn stream_url(&self, since: &str) -> String {
+        format!(
+            "{}/{}/sse?since={}",
             self.server.trim_end_matches('/'),
-            crate::util::encode_segment(&self.topic)
-        );
-        match since {
-            Some(cursor) => format!("{base}?since={}", crate::util::encode_query(cursor)),
-            None => format!("{base}?since=24h"),
-        }
+            crate::util::encode_segment(&self.topic),
+            crate::util::encode_query(since),
+        )
     }
 
     pub fn web_url(&self) -> String {

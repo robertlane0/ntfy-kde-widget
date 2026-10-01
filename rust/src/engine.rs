@@ -206,8 +206,17 @@ impl Engine {
         shutdown: tokio::sync::watch::Receiver<bool>,
     ) {
         let http = client::client();
+        // Continue from the last message we saw, so restarting the task for any
+        // reason does not replay recent messages.
+        let resume_from = self
+            .cursors
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == &spec.id)
+            .map(|(_, cursor)| cursor.clone());
         handle.spawn(async move {
-            client::run(http, spec, tx, shutdown).await;
+            client::run(http, spec, resume_from, tx, shutdown).await;
         });
     }
 

@@ -58,19 +58,29 @@ pub fn client() -> reqwest::Client {
 }
 
 /// Stream one subscription forever, reporting every state change and message.
+///
+/// `resume_from` is the last message id seen, so restarting the task continues
+/// the stream instead of replaying the backlog.
 pub async fn run(
     http: reqwest::Client,
     spec: Spec,
+    resume_from: Option<String>,
     tx: std::sync::mpsc::Sender<Event>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    let mut cursor: Option<String> = None;
+    let mut cursor: Option<String> = resume_from;
     let mut backoff = Duration::from_secs(1);
 
     loop {
         if *shutdown.borrow() {
             return;
         }
+
+        // Without a cursor, ask for messages published since the subscription
+        // was created: nothing older is a message the user can act on.
+        let since = cursor
+            .clone()
+            .unwrap_or_else(|| spec.created_at.to_string());
 
         let url = crate::model::Subscription {
             id: spec.id.clone(),
@@ -84,7 +94,7 @@ pub async fn run(
             detail: String::new(),
             created_at: spec.created_at,
         }
-        .stream_url(cursor.as_deref());
+        .stream_url(&since);
 
         match connect(&http, &spec, &url, &tx, &mut cursor, &mut shutdown).await {
             // The stream opened at least once: the ladder starts over.

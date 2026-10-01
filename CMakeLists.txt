@@ -81,6 +81,18 @@ set(PACKAGE_ID org.ntfy.widget)
 set(PACKAGE_STAGE ${CMAKE_CURRENT_BINARY_DIR}/${PACKAGE_ID})
 set(MODULE_STAGE ${CMAKE_CURRENT_BINARY_DIR}/module/org/ntfy/widget)
 
+# Qt only looks in its own import directory for QML modules, so this one has to
+# be staged there rather than under the user's data directory.
+find_program(QMAKE6_EXECUTABLE qmake6)
+if(QMAKE6_EXECUTABLE)
+    execute_process(COMMAND ${QMAKE6_EXECUTABLE} -query QT_INSTALL_QML
+                    OUTPUT_VARIABLE QT_INSTALL_QML OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+if(NOT QT_INSTALL_QML)
+    set(QT_INSTALL_QML ${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PREFIX}/qml)
+endif()
+set(NTFY_MODULE_INSTALL_DIR ${QT_INSTALL_QML}/org/ntfy/widget)
+
 file(GLOB_RECURSE PACKAGING_FILES CONFIGURE_DEPENDS
      ${CMAKE_CURRENT_SOURCE_DIR}/packaging/*
 )
@@ -106,17 +118,16 @@ find_program(KPACKAGETOOL kpackagetool6)
 if(KPACKAGETOOL)
     add_custom_target(dev-install
         COMMAND ${KPACKAGETOOL} --type Plasma/Applet --upgrade ${PACKAGE_STAGE}
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-                ${MODULE_STAGE} $ENV{HOME}/.local/share/qt6/qml/org/ntfy/widget
+        COMMAND sudo ${CMAKE_COMMAND} -E copy_directory
+                ${MODULE_STAGE} ${NTFY_MODULE_INSTALL_DIR}
         DEPENDS ntfy_package
-        COMMENT "Installing the applet and QML module for the current user"
+        COMMENT "Installing the applet and its QML module"
         VERBATIM
     )
     add_custom_target(dev-uninstall
         COMMAND ${KPACKAGETOOL} --remove ${PACKAGE_ID}
-        COMMAND ${CMAKE_COMMAND} -E remove_directory
-                $ENV{HOME}/.local/share/qt6/qml/org/ntfy
-        COMMENT "Removing the user copy of the applet and QML module"
+        COMMAND sudo ${CMAKE_COMMAND} -E remove_directory ${QT_INSTALL_QML}/org/ntfy
+        COMMENT "Removing the applet and its QML module"
         VERBATIM
     )
 endif()
