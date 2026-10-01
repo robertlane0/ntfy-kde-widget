@@ -89,14 +89,18 @@ C++ → Rust: `ntfy_command(op, a, b, c)` returns a malloc'd JSON result
 
 ### Streaming
 
-Each subscription opens `GET <server>/<topic>/sse?since=<cursor>` and parses the SSE
-frames by hand. `cursor` is the last message id seen for that topic; it is held by the
-engine and handed to a task when it starts, so restarting a task — which happens on
-every add, remove or mute — resumes instead of replaying.
+Each subscription opens `GET <server>/<topic>/sse?since=<timestamp>` and parses the SSE
+frames by hand. `since` is a unix timestamp, not a message id: ntfy ignores a value it
+cannot read as a timestamp or duration and replays the whole topic instead.
 
-With no cursor the stream asks for messages published since the subscription was
-created (`since=<unix timestamp>`), so a new subscription does not arrive with a day
-of history.
+The engine keeps a per-subscription cursor — the newest message's timestamp plus the
+ids of the recent messages — and hands it to a task when it starts, so restarting a
+task resumes rather than replays. Both halves are persisted, so a restart resumes too.
+The ids matter because a timestamp cannot separate two messages published in the same
+second, which is exactly the boundary a resume lands on.
+
+With nothing read yet the stream asks for messages published since the subscription was
+created, so a new subscription does not arrive with a day of history.
 
 Backoff doubles from one second to sixty. Responses that will never succeed (401, 403,
 404) back off to five minutes instead, since retrying hard only wastes the server's
@@ -106,13 +110,34 @@ time. `Retry-After` is honoured where the server sends it.
 
 A message raises a notification when it arrives after `createdAt` and its priority is
 at least `minPriority`. Anything else only increments the unread counter. Both are
-filtered in `engine.rs`, before the event leaves the core.
+filtered in `engine.rs`, before the event leaves the core. Messages the cursor already
+covers are dropped outright, so a replayed stream neither notifies nor counts twice.
+
+## Lifetime
+
+The core runs inside `plasmashell`, so its lifetime is tied to the applet's rather than
+the process's:
+
+- `main.qml` calls `Bridge.activate()` when it completes and `Bridge.deactivate()` when
+  it is destroyed.
+- The bridge counts live applet views and starts the core on the first, stops it on the
+  last. `ntfy_stop()` cancels the SSE tasks and shuts the runtime down.
+- `libntfywidget.so` cannot be unloaded — Qt keeps QML extension plugins for the life of
+  the engine — so the sink is removed explicitly on the way out.
+
+Without this the applet could be removed from the panel while the engine kept streaming
+and posting notifications for the rest of the session.
+
+Locks: the message handler holds `subs` and passes the stored cursor into
+`note_message`, which locks only `cursors`. `std::sync::Mutex` is not reentrant, so
+`note_message` must never reach for `subs` itself.
 
 ## Tests
 
 `cargo test` covers the JSON round trip, the SSE frame accumulator, server
-normalisation and id generation. The Qt side has no automated tests; the
-`ntfyprobe` helper covers package discovery.
+normalisation and id generation, and the cursor's replay suppression — including a
+stored cursor seeding a fresh engine, which is the restart case. The Qt side has no
+automated tests; the `ntfyprobe` helper covers package discovery.
 
 ## Notes and limits
 
@@ -126,6 +151,10 @@ normalisation and id generation. The Qt side has no automated tests; the
   whether it is idle, hovered, or showing the delete confirmation.
 - Notifications are posted over `org.freedesktop.Notifications` directly. Actions are
   label/key pairs; both entries share a label so the server renders a single button.
+  Urgent messages stay up for 30s and the rest for 10s, rather than never expiring.
+- The notification server is plasmashell itself, so its own `Notify` calls are loopback
+  and invisible to `dbus-monitor`. Verifying delivery needs a screenshot, not a bus
+  trace.
 - Backdrop blur is not available to Qt Quick windows on Wayland, so the popover uses
   Plasma's own background and gets its macOS feel from the content: rounded cards,
   hairline separators, restrained type and an accent used sparingly.

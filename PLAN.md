@@ -20,7 +20,11 @@ See [docs/architecture.md](docs/architecture.md) for the full picture. In short:
   `.so`. It forwards commands in and hops JSON events from Rust's worker threads onto
   the GUI thread.
 - The Rust core runs a tokio task per subscription, each holding an SSE request, and
-  keeps per-topic unread counters.
+  keeps per-topic unread counters. It starts when the first applet appears and stops
+  when the last one goes, so a removed applet leaves nothing running.
+- Streams resume from a persisted unix timestamp plus the ids of the messages already
+  covered. `since` must be a timestamp: ntfy ignores a message id there and replays
+  the topic, which is what made notifications repeat.
 
 ## Layout
 
@@ -41,6 +45,7 @@ docs/      architecture notes
 5. [x] macOS UI: panel button, popover, rows, add sheet
 6. [x] End-to-end verification with screenshots
 7. [x] README and architecture notes
+8. [x] Tie the core's lifetime to the applet, and resume streams by timestamp
 
 ## Still open
 

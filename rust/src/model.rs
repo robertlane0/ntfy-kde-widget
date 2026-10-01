@@ -35,6 +35,12 @@ pub struct Subscription {
     pub state: LinkState,
     pub detail: String,
     pub created_at: i64,
+    /// Newest message already handled. Persisted so a restart resumes the
+    /// stream instead of walking the backlog again.
+    pub cursor: i64,
+    /// Ids of the most recent messages, so the second either side of the resume
+    /// point is not renotified after a restart.
+    pub recent: Vec<String>,
 }
 
 impl Subscription {
@@ -54,6 +60,15 @@ impl Subscription {
             self.server.trim_end_matches('/'),
             crate::util::encode_segment(&self.topic)
         )
+    }
+
+    /// Where a stream for this subscription should pick up.
+    pub fn resume_from(&self) -> i64 {
+        if self.cursor > 0 {
+            self.cursor
+        } else {
+            self.created_at
+        }
     }
 
     pub fn to_json(&self) -> Json {
@@ -116,7 +131,19 @@ mod tests {
             state: LinkState::Connecting,
             detail: String::new(),
             created_at: 1_700_000_000,
+            cursor: 0,
+            recent: Vec::new(),
         }
+    }
+
+    #[test]
+    fn an_unread_subscription_starts_from_its_creation_time() {
+        // No cursor yet means nothing has been read, so the subscription's own
+        // creation time is the oldest message worth showing.
+        let mut s = sub();
+        assert_eq!(s.resume_from(), 1_700_000_000);
+        s.cursor = 1_700_000_500;
+        assert_eq!(s.resume_from(), 1_700_000_500);
     }
 
     #[test]

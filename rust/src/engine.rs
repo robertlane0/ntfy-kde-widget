@@ -32,13 +32,11 @@ struct Cursor {
 }
 
 impl Cursor {
-    fn new(message_id: &str, time: i64) -> Self {
-        let mut cursor = Cursor {
+    fn new(time: i64, recent: Vec<String>) -> Self {
+        Cursor {
             time,
-            recent: VecDeque::new(),
-        };
-        cursor.remember(message_id);
-        cursor
+            recent: recent.into(),
+        }
     }
 
     fn has(&self, message_id: &str) -> bool {
@@ -242,13 +240,7 @@ impl Engine {
         let http = client::client();
         // Continue from the newest message already handled, so restarting the
         // task for any reason does not replay recent messages.
-        let resume_from = self
-            .cursors
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|(key, _)| key == &spec.id)
-            .map(|(_, cursor)| cursor.time);
+        let resume_from = self.resume_point(&spec.id);
         handle.spawn(async move {
             client::run(http, spec, resume_from, tx, shutdown).await;
         });
@@ -277,13 +269,64 @@ impl Engine {
         }
     }
 
+    /// Where a subscription's stream should pick up, and which ids it has already
+    /// covered. The cursor and the ids are both kept in memory and in the store,
+    /// so a reconnect or a restart resumes instead of replaying.
+    fn resume_point(&self, id: &str) -> i64 {
+        let in_session = self
+            .cursors
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(key, _)| key == id)
+            .map(|(_, cursor)| cursor.time);
+        let stored = self
+            .subs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.id == id)
+            .cloned();
+        // In-session cursor wins; otherwise the stored one; otherwise the
+        // subscription's own creation time.
+        in_session
+            .or_else(|| stored.as_ref().map(Subscription::resume_from))
+            .unwrap_or(0)
+    }
+
+    /// The resume point and covered ids held in the store. Read separately
+    /// because the message handler already holds `subs` when it needs a seed.
+    fn stored_cursor(&self, id: &str) -> Option<(i64, Vec<String>)> {
+        self.subs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.id == id)
+            .map(|s| (s.cursor, s.recent.clone()))
+    }
+
     /// Advances the cursor for a message. Returns false when the message is one
     /// already accounted for, which is what a replayed stream produces.
-    fn note_message(&self, id: &str, message_id: &str, time: i64) -> bool {
+    fn note_message(
+        &self,
+        id: &str,
+        message_id: &str,
+        time: i64,
+        seed: Option<(i64, Vec<String>)>,
+    ) -> bool {
         let mut cursors = self.cursors.lock().unwrap();
+        if !cursors.iter().any(|(key, _)| key == id) {
+            // Seed from the store on first use, so ids covered before a restart
+            // are still suppressed after it. Nothing stored means this message
+            // is the first one seen, so it counts.
+            let Some((start, ids)) = seed else {
+                cursors.push((id.to_string(), Cursor::new(time, remembered(message_id))));
+                return true;
+            };
+            cursors.push((id.to_string(), Cursor::new(start, ids)));
+        }
         let Some((_, cursor)) = cursors.iter_mut().find(|(key, _)| key == id) else {
-            cursors.push((id.to_string(), Cursor::new(message_id, time)));
-            return true;
+            return false;
         };
         // Before the resume point, or one of the ids it already covered.
         if time < cursor.time || (!message_id.is_empty() && cursor.has(message_id)) {
@@ -319,13 +362,16 @@ impl Engine {
                 mut notification,
                 time,
             } => {
-                let (is_new, url, label) = {
+                // Read the stored cursor before taking `subs`: note_message
+                // needs it and must not lock `subs` itself.
+                let seed = self.stored_cursor(&id);
+                let (is_new, url, label, snapshot) = {
                     let mut subs = self.subs.lock().unwrap();
                     let Some(index) = subs.iter().position(|s| s.id == id) else {
                         return;
                     };
                     // A reconnect can hand back messages already handled.
-                    if !self.note_message(&id, &message_id, time) {
+                    if !self.note_message(&id, &message_id, time, seed) {
                         return;
                     }
 
@@ -335,12 +381,23 @@ impl Engine {
                     // filter, only bump the unread counter.
                     let is_new =
                         time >= sub.created_at && notification.priority >= sub.min_priority;
+                    // Persisted with the rest, so a restart resumes here rather
+                    // than replaying everything since the subscription was added.
+                    sub.cursor = time;
+                    if !message_id.is_empty() {
+                        sub.recent.push(message_id.clone());
+                        while sub.recent.len() > RECENT_IDS {
+                            sub.recent.remove(0);
+                        }
+                    }
                     (
                         is_new,
                         sub.web_url(),
                         format!("{} · {}", sub.topic, host_of(&sub.server)),
+                        subs.clone(),
                     )
                 };
+                let _ = store::save(&snapshot);
                 if notification.title.is_empty() {
                     notification.title = label;
                 }
@@ -402,6 +459,8 @@ impl Engine {
                 state: LinkState::Connecting,
                 detail: String::new(),
                 created_at: util::now_secs(),
+                cursor: 0,
+                recent: Vec::new(),
             });
         }
         let _ = store::save(&subs);
@@ -487,6 +546,14 @@ impl Engine {
     }
 }
 
+fn remembered(message_id: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    if !message_id.is_empty() {
+        ids.push(message_id.to_string());
+    }
+    ids
+}
+
 fn host_of(server: &str) -> String {
     let trimmed = server
         .trim_start_matches("https://")
@@ -513,23 +580,63 @@ mod tests {
     #[test]
     fn replayed_messages_are_ignored() {
         let engine = bare();
-        assert!(engine.note_message("a", "m1", 100));
+        assert!(engine.note_message("a", "m1", 100, None));
         // The same message arriving again, as a replayed stream produces.
-        assert!(!engine.note_message("a", "m1", 100));
+        assert!(!engine.note_message("a", "m1", 100, None));
         // A different message in the same second is still new.
-        assert!(engine.note_message("a", "m2", 100));
+        assert!(engine.note_message("a", "m2", 100, None));
         // Anything behind the resume point is history, not news.
-        assert!(!engine.note_message("a", "m3", 99));
+        assert!(!engine.note_message("a", "m3", 99, None));
         // A newer message moves the resume point on.
-        assert!(engine.note_message("a", "m4", 101));
-        assert!(!engine.note_message("a", "m2", 100));
+        assert!(engine.note_message("a", "m4", 101, None));
+        assert!(!engine.note_message("a", "m2", 100, None));
     }
 
     #[test]
     fn cursors_are_per_subscription() {
         let engine = bare();
-        assert!(engine.note_message("a", "m1", 100));
-        assert!(engine.note_message("b", "m1", 100));
-        assert!(engine.note_message("b", "m2", 100));
+        assert!(engine.note_message("a", "m1", 100, None));
+        assert!(engine.note_message("b", "m1", 100, None));
+        assert!(engine.note_message("b", "m2", 100, None));
+    }
+
+    #[test]
+    fn a_stored_cursor_suppresses_a_replayed_boundary_message() {
+        let engine = bare();
+
+        // The stream replays the message on the boundary second: already seen.
+        assert!(!engine.note_message("a", "m2", 100, Some((100, vec!["m2".into()]))));
+        // A genuinely new message in that same second still gets through.
+        assert!(engine.note_message("a", "m3", 100, Some((100, vec!["m2".into()]))));
+    }
+
+    #[test]
+    fn a_subscription_with_no_history_starts_at_its_creation_time() {
+        // Nothing stored means nothing has been read, so there is no resume
+        // point beyond the subscription's own creation time.
+        let engine = bare();
+        assert_eq!(engine.resume_point("a"), 0);
+        // Its first message counts, and nothing is suppressed.
+        assert!(engine.note_message("a", "m1", 100, None));
+    }
+
+    #[test]
+    fn a_stored_resume_point_is_used_when_nothing_was_read_yet() {
+        let mut engine = bare();
+        engine.subs = Mutex::new(vec![Subscription {
+            id: "a".into(),
+            server: "https://ntfy.sh".into(),
+            topic: "alerts".into(),
+            token: None,
+            enabled: true,
+            min_priority: 3,
+            unread: 0,
+            state: LinkState::Live,
+            detail: String::new(),
+            created_at: 10,
+            cursor: 100,
+            recent: vec!["m2".into()],
+        }]);
+        assert_eq!(engine.resume_point("a"), 100);
     }
 }

@@ -52,6 +52,18 @@ fn from_json(v: &Json) -> Option<Subscription> {
             .get("createdAt")
             .and_then(Json::as_i64)
             .unwrap_or_else(util::now_secs),
+        cursor: v.get("cursor").and_then(Json::as_i64).unwrap_or(0),
+        recent: v
+            .get("recent")
+            .and_then(Json::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Json::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -70,6 +82,11 @@ pub fn save(subs: &[Subscription]) -> Result<(), String> {
                     .set("enabled", Json::Bool(s.enabled))
                     .set("minPriority", Json::int(s.min_priority as i64))
                     .set("createdAt", Json::int(s.created_at))
+                    .set("cursor", Json::int(s.cursor))
+                    .set(
+                        "recent",
+                        Json::Arr(s.recent.iter().map(Json::str).collect()),
+                    )
                     .build()
             })
             .collect(),

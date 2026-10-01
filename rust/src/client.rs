@@ -81,14 +81,14 @@ pub fn client() -> reqwest::Client {
 pub async fn run(
     http: reqwest::Client,
     spec: Spec,
-    resume_from: Option<i64>,
+    resume_from: i64,
     tx: std::sync::mpsc::Sender<Event>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    // ntfy reads `since` as a unix timestamp or a duration. Falling back to the
-    // subscription's creation time means a new subscription does not arrive with
-    // a day of history.
-    let mut since = resume_from.unwrap_or(spec.created_at);
+    // ntfy reads `since` as a unix timestamp or a duration. The engine passes the
+    // subscription's creation time until it has read anything, so a new
+    // subscription does not arrive with a day of history.
+    let mut since = resume_from;
     let mut backoff = Duration::from_secs(1);
 
     loop {
@@ -107,6 +107,8 @@ pub async fn run(
             state: LinkState::Connecting,
             detail: String::new(),
             created_at: spec.created_at,
+            cursor: since,
+            recent: Vec::new(),
         }
         .stream_url(since);
 
