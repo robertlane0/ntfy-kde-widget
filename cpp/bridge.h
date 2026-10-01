@@ -25,6 +25,11 @@ public:
     /// Full state snapshot as JSON, delivered on the GUI thread.
     Q_INVOKABLE QString state() const;
 
+    /// Called by the applet as it appears and goes away. The core streams and
+    /// notifies only while at least one applet is on a panel.
+    Q_INVOKABLE void activate();
+    Q_INVOKABLE void deactivate();
+
     /// GUI thread entry point for core events; called by the shared sink.
     void handleEvent(uint32_t kind, const QString &payload);
 

@@ -12,12 +12,8 @@
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QMetaObject>
-#include <QPointer>
 #include <QProcess>
 #include <QStringList>
-
-#include <algorithm>
-#include <vector>
 
 namespace
 {
@@ -25,11 +21,13 @@ namespace
 constexpr auto notificationService = "org.freedesktop.Notifications";
 constexpr auto notificationPath = "/org/freedesktop/Notifications";
 
-/// One bridge per applet instance, and at most one listener on the Rust core.
+/// The one bridge in this process, the sink feeding it and how many applet
+/// views are using it. The Rust core runs only while that count is above zero.
 struct Registry
 {
-    std::vector<QPointer<Bridge>> bridges;
+    Bridge *bridge = nullptr;
     size_t sink = 0;
+    int views = 0;
 };
 
 Registry &registry()
@@ -41,22 +39,16 @@ Registry &registry()
 /// Called by the Rust core from its worker threads.
 void onRustEvent(uint32_t kind, const char *json, size_t len)
 {
-    const QString payload = QString::fromUtf8(json, static_cast<qsizetype>(len));
-    const auto snapshot = registry().bridges;
-    for (const auto &bridge : snapshot) {
-        if (!bridge) {
-            continue;
-        }
-        // Hop to the GUI thread: QML and DBus are both single threaded.
-        QMetaObject::invokeMethod(
-            bridge,
-            [bridge, kind, payload] {
-                if (bridge) {
-                    bridge->handleEvent(kind, payload);
-                }
-            },
-            Qt::QueuedConnection);
+    Bridge *bridge = registry().bridge;
+    if (!bridge) {
+        return;
     }
+    const QString payload = QString::fromUtf8(json, static_cast<qsizetype>(len));
+    // Hop to the GUI thread: QML and DBus are both single threaded.
+    QMetaObject::invokeMethod(
+        bridge,
+        [bridge, kind, payload] { bridge->handleEvent(kind, payload); },
+        Qt::QueuedConnection);
 }
 
 /// Keeps one notification alive so its action button can open the topic.
@@ -122,8 +114,9 @@ void postNotification(const QString &title, const QString &body, const QString &
         hints.insert(QStringLiteral("x-kde-notification-title"), title);
     }
 
-    // Urgent messages stay on screen longer; the rest use the server default.
-    const int timeout = priority >= 5 ? 20000 : -1;
+    // Urgent messages stay on screen longer; the rest clear themselves so a
+    // quiet topic cannot leave a column of popups behind.
+    const int timeout = priority >= 5 ? 30000 : 10000;
 
     const QDBusMessage reply = iface->call(QStringLiteral("Notify"),
                                            QStringLiteral("ntfy"),
@@ -174,30 +167,52 @@ Bridge::Bridge(QObject *parent)
     , d(new Private)
 {
     setObjectName(QStringLiteral("org.ntfy.widget.Bridge"));
-    registry().bridges.push_back(this);
-    if (registry().bridges.size() == 1) {
-        registry().sink = ntfy_add_sink(&onRustEvent);
-    }
-    ntfy_start();
 }
 
 Bridge *Bridge::create(QQmlEngine *, QJSEngine *)
 {
     // One engine, one set of streams: hand every QML client the same object.
-    static Bridge *singleton = new Bridge;
-    return singleton;
+    Registry &r = registry();
+    if (!r.bridge) {
+        r.bridge = new Bridge;
+    }
+    return r.bridge;
 }
 
 Bridge::~Bridge()
 {
-    auto &bridges = registry().bridges;
-    bridges.erase(std::remove(bridges.begin(), bridges.end(), QPointer<Bridge>(this)), bridges.end());
-    if (bridges.empty()) {
-        ntfy_remove_sink(registry().sink);
-        registry().sink = 0;
+    Registry &r = registry();
+    if (r.bridge == this) {
+        r.bridge = nullptr;
+        r.views = 0;
+        if (r.sink) {
+            ntfy_remove_sink(r.sink);
+            r.sink = 0;
+        }
         ntfy_stop();
     }
     delete d;
+}
+
+void Bridge::activate()
+{
+    Registry &r = registry();
+    if (r.views++ == 0) {
+        if (!r.sink) {
+            r.sink = ntfy_add_sink(&onRustEvent);
+        }
+        ntfy_start();
+    }
+}
+
+void Bridge::deactivate()
+{
+    Registry &r = registry();
+    // The applet is gone, so nothing should stream or pop up notifications for
+    // the rest of the session.
+    if (r.views > 0 && --r.views == 0) {
+        ntfy_stop();
+    }
 }
 
 QString Bridge::state() const

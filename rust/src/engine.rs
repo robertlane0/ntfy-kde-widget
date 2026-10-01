@@ -1,5 +1,6 @@
 //! Supervises one streaming task per subscription and fans events out to the UI.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
@@ -17,12 +18,47 @@ const KIND_STATE: u32 = 1;
 const KIND_NOTIFY: u32 = 2;
 const KIND_LOG: u32 = 3;
 
+/// How many message ids to remember per subscription.
+const RECENT_IDS: usize = 128;
+
+/// How far one subscription has been read.
+///
+/// `since` on the wire is a unix timestamp, which cannot separate two messages
+/// published in the same second, so `recent` also remembers the ids already
+/// covered. Together they let a reconnect resume without renotifying.
+struct Cursor {
+    time: i64,
+    recent: VecDeque<String>,
+}
+
+impl Cursor {
+    fn new(message_id: &str, time: i64) -> Self {
+        let mut cursor = Cursor {
+            time,
+            recent: VecDeque::new(),
+        };
+        cursor.remember(message_id);
+        cursor
+    }
+
+    fn has(&self, message_id: &str) -> bool {
+        self.recent.iter().any(|id| id == message_id)
+    }
+
+    fn remember(&mut self, message_id: &str) {
+        self.recent.push_back(message_id.to_string());
+        while self.recent.len() > RECENT_IDS {
+            self.recent.pop_front();
+        }
+    }
+}
+
 /// A listener the core pushes events to. Must not block.
 type Sink = Box<dyn Fn(UiEvent) + Send + Sync>;
 
 pub struct Engine {
     subs: Mutex<Vec<Subscription>>,
-    cursors: Mutex<Vec<(String, String)>>,
+    cursors: Mutex<Vec<(String, Cursor)>>,
     sinks: Mutex<Vec<Sink>>,
     runtime: Mutex<Option<tokio::runtime::Runtime>>,
     shutdown: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
@@ -204,15 +240,15 @@ impl Engine {
         shutdown: tokio::sync::watch::Receiver<bool>,
     ) {
         let http = client::client();
-        // Continue from the last message we saw, so restarting the task for any
-        // reason does not replay recent messages.
+        // Continue from the newest message already handled, so restarting the
+        // task for any reason does not replay recent messages.
         let resume_from = self
             .cursors
             .lock()
             .unwrap()
             .iter()
             .find(|(key, _)| key == &spec.id)
-            .map(|(_, cursor)| cursor.clone());
+            .map(|(_, cursor)| cursor.time);
         handle.spawn(async move {
             client::run(http, spec, resume_from, tx, shutdown).await;
         });
@@ -241,6 +277,25 @@ impl Engine {
         }
     }
 
+    /// Advances the cursor for a message. Returns false when the message is one
+    /// already accounted for, which is what a replayed stream produces.
+    fn note_message(&self, id: &str, message_id: &str, time: i64) -> bool {
+        let mut cursors = self.cursors.lock().unwrap();
+        let Some((_, cursor)) = cursors.iter_mut().find(|(key, _)| key == id) else {
+            cursors.push((id.to_string(), Cursor::new(message_id, time)));
+            return true;
+        };
+        // Before the resume point, or one of the ids it already covered.
+        if time < cursor.time || (!message_id.is_empty() && cursor.has(message_id)) {
+            return false;
+        }
+        cursor.time = time;
+        if !message_id.is_empty() {
+            cursor.remember(message_id);
+        }
+        true
+    }
+
     // --- event handling --------------------------------------------------
 
     fn handle(&self, event: Event) {
@@ -260,7 +315,7 @@ impl Engine {
             }
             Event::Message {
                 id,
-                cursor,
+                message_id,
                 mut notification,
                 time,
             } => {
@@ -269,10 +324,10 @@ impl Engine {
                     let Some(index) = subs.iter().position(|s| s.id == id) else {
                         return;
                     };
-                    let mut cursors = self.cursors.lock().unwrap();
-                    cursors.retain(|(key, _)| key != &id);
-                    cursors.push((id.clone(), cursor));
-                    drop(cursors);
+                    // A reconnect can hand back messages already handled.
+                    if !self.note_message(&id, &message_id, time) {
+                        return;
+                    }
 
                     let sub = &mut subs[index];
                     sub.unread = sub.unread.saturating_add(1);
@@ -437,4 +492,44 @@ fn host_of(server: &str) -> String {
         .trim_start_matches("https://")
         .trim_start_matches("http://");
     trimmed.trim_end_matches('/').to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bare() -> Engine {
+        Engine {
+            subs: Mutex::new(Vec::new()),
+            cursors: Mutex::new(Vec::new()),
+            sinks: Mutex::new(Vec::new()),
+            runtime: Mutex::new(None),
+            shutdown: Mutex::new(None),
+            tx: Mutex::new(None),
+            running: AtomicBool::new(false),
+        }
+    }
+
+    #[test]
+    fn replayed_messages_are_ignored() {
+        let engine = bare();
+        assert!(engine.note_message("a", "m1", 100));
+        // The same message arriving again, as a replayed stream produces.
+        assert!(!engine.note_message("a", "m1", 100));
+        // A different message in the same second is still new.
+        assert!(engine.note_message("a", "m2", 100));
+        // Anything behind the resume point is history, not news.
+        assert!(!engine.note_message("a", "m3", 99));
+        // A newer message moves the resume point on.
+        assert!(engine.note_message("a", "m4", 101));
+        assert!(!engine.note_message("a", "m2", 100));
+    }
+
+    #[test]
+    fn cursors_are_per_subscription() {
+        let engine = bare();
+        assert!(engine.note_message("a", "m1", 100));
+        assert!(engine.note_message("b", "m1", 100));
+        assert!(engine.note_message("b", "m2", 100));
+    }
 }

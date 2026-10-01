@@ -27,7 +27,7 @@ pub enum Event {
     },
     Message {
         id: String,
-        cursor: String,
+        message_id: String,
         notification: Notification,
         time: i64,
     },
@@ -76,28 +76,25 @@ pub fn client() -> reqwest::Client {
 
 /// Stream one subscription forever, reporting every state change and message.
 ///
-/// `resume_from` is the last message id seen, so restarting the task continues
-/// the stream instead of replaying the backlog.
+/// `resume_from` is the unix timestamp of the newest message already handled, so
+/// restarting the task continues the stream instead of replaying the backlog.
 pub async fn run(
     http: reqwest::Client,
     spec: Spec,
-    resume_from: Option<String>,
+    resume_from: Option<i64>,
     tx: std::sync::mpsc::Sender<Event>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    let mut cursor: Option<String> = resume_from;
+    // ntfy reads `since` as a unix timestamp or a duration. Falling back to the
+    // subscription's creation time means a new subscription does not arrive with
+    // a day of history.
+    let mut since = resume_from.unwrap_or(spec.created_at);
     let mut backoff = Duration::from_secs(1);
 
     loop {
         if *shutdown.borrow() {
             return;
         }
-
-        // Without a cursor, ask for messages published since the subscription
-        // was created: nothing older is a message the user can act on.
-        let since = cursor
-            .clone()
-            .unwrap_or_else(|| spec.created_at.to_string());
 
         let url = crate::model::Subscription {
             id: spec.id.clone(),
@@ -111,9 +108,9 @@ pub async fn run(
             detail: String::new(),
             created_at: spec.created_at,
         }
-        .stream_url(&since);
+        .stream_url(since);
 
-        match connect(&http, &spec, &url, &tx, &mut cursor, &mut shutdown).await {
+        match connect(&http, &spec, &url, &tx, &mut since, &mut shutdown).await {
             // The stream opened at least once: the ladder starts over.
             Ok(true) => {
                 backoff = Duration::from_secs(1);
@@ -168,7 +165,7 @@ async fn connect(
     spec: &Spec,
     url: &str,
     tx: &std::sync::mpsc::Sender<Event>,
-    cursor: &mut Option<String>,
+    since: &mut i64,
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<bool, Failure> {
     let mut headers = HeaderMap::new();
@@ -247,7 +244,7 @@ async fn connect(
                     let line = line.strip_suffix('\r').unwrap_or(&line).to_string();
                     if frame.push(&line) {
                         if let Some(event) = frame.build() {
-                            dispatch(&event, spec, cursor, tx);
+                            dispatch(&event, spec, since, tx);
                         }
                         frame = Frame::default();
                     }
@@ -312,12 +309,7 @@ struct SseEvent {
     data: String,
 }
 
-fn dispatch(
-    event: &SseEvent,
-    spec: &Spec,
-    cursor: &mut Option<String>,
-    tx: &std::sync::mpsc::Sender<Event>,
-) {
+fn dispatch(event: &SseEvent, spec: &Spec, since: &mut i64, tx: &std::sync::mpsc::Sender<Event>) {
     let Ok(value) = json::parse(&event.data) else {
         return;
     };
@@ -331,10 +323,6 @@ fn dispatch(
         .map(str::to_string)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| event.id.clone());
-
-    if !message_id.is_empty() {
-        *cursor = Some(message_id.clone());
-    }
 
     // open, keepalive and poll_request carry no new message to show.
     if kind != "message" {
@@ -371,9 +359,12 @@ fn dispatch(
         url: String::new(),
         received_at,
     };
+    // Resume from this message next time, so a reconnect cannot walk back
+    // through anything already delivered.
+    *since = (*since).max(received_at);
     let _ = tx.send(Event::Message {
         id: spec.id.clone(),
-        cursor: message_id,
+        message_id,
         notification,
         time: received_at,
     });

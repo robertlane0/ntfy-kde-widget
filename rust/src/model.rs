@@ -38,13 +38,13 @@ pub struct Subscription {
 }
 
 impl Subscription {
-    /// Stream url with a `since` cursor so reconnects resume instead of replaying.
-    pub fn stream_url(&self, since: &str) -> String {
+    /// Stream url with a `since` timestamp so reconnects resume instead of replaying.
+    pub fn stream_url(&self, since: i64) -> String {
         format!(
             "{}/{}/sse?since={}",
             self.server.trim_end_matches('/'),
             crate::util::encode_segment(&self.topic),
-            crate::util::encode_query(since),
+            since,
         )
     }
 
@@ -97,5 +97,40 @@ impl Notification {
             .set("url", Json::str(&self.url))
             .set("receivedAt", Json::int(self.received_at))
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sub() -> Subscription {
+        Subscription {
+            id: "id".into(),
+            server: "https://ntfy.sh".into(),
+            topic: "alerts".into(),
+            token: None,
+            enabled: true,
+            min_priority: 3,
+            unread: 0,
+            state: LinkState::Connecting,
+            detail: String::new(),
+            created_at: 1_700_000_000,
+        }
+    }
+
+    #[test]
+    fn stream_url_resumes_from_a_timestamp() {
+        // ntfy reads `since` as a unix timestamp or a duration; anything else is
+        // ignored and the whole topic is replayed.
+        assert_eq!(
+            sub().stream_url(1_790_877_143),
+            "https://ntfy.sh/alerts/sse?since=1790877143"
+        );
+    }
+
+    #[test]
+    fn web_url_encodes_the_topic() {
+        assert_eq!(sub().web_url(), "https://ntfy.sh/alerts");
     }
 }

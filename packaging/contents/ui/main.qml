@@ -41,7 +41,14 @@ PlasmoidItem {
         }
     }
 
-    Component.onCompleted: root.model = JSON.parse(Bridge.state() || "{}")
+    Component.onCompleted: {
+        // Only stream while an applet is actually on a panel: the core lives in
+        // plasmashell and would otherwise outlive this applet.
+        Bridge.activate()
+        root.model = JSON.parse(Bridge.state() || "{}")
+    }
+
+    Component.onDestruction: Bridge.deactivate()
 
     // A bare PlasmoidItem, unlike a CompactApplet, gets no popup toggle from
     // the shell, so the panel button has to ask for one. The toggle has to
